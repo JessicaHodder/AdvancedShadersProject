@@ -1,0 +1,154 @@
+#version 450 core
+
+// reading in a triangle, split tesselated triangels evenly in a counter-clockwise direction (ccw)
+layout(triangles, equal_spacing, ccw) in;
+
+// forward declare functions to perfrom interpolation with the barycentric coordinates from the Primitive Generator
+vec2 interpolate2D(vec2 v0, vec2 v1, vec2 v2) ;
+vec3 interpolate3D(vec3 v0, vec3 v1, vec3 v2) ;
+
+
+// unifrom matrices to perform transformations
+// previously this would have been done in vertex shader
+uniform mat4 model;
+uniform mat4 view;
+uniform mat4 projection;
+
+uniform sampler2D heightMap;
+
+uniform int scale;
+
+
+// procederal stuff
+int octaves = 2;
+
+float r;
+float l;
+float u;
+float d;
+
+float hash(float n);
+float snoise(vec3 x);
+float noise(vec3 position, int octaves);
+
+// read in vector arrays from previous shader
+in vec3 posTC[] ;
+//in vec3 normTC[] ;
+in vec2 TexTC[] ;
+
+
+
+// pass along the interpolated values
+//out vec3 normES ;
+out vec3 posES ;
+out vec2 TexES ;
+
+out vec3 normES ;
+
+
+
+void main()
+{
+    // interpolate the normal and xyz position using the linear interpolation function
+    // use 3D because they are in three dimensions; 2D also included for uv texture coordinates
+
+   
+   TexES = interpolate2D(TexTC[0], TexTC[1], TexTC[2]) ;
+
+   posES = interpolate3D(posTC[0], posTC[1], posTC[2]) ;
+
+   float height = texture(heightMap, TexES).r ;
+   posES.y = height*scale ;  // <-putback
+
+   // transform vertex to clip space  - NOTE: WE NEED TO DO IT HERE NOW and not in vertex shader
+   //gl_Position = vec4(posES, 1.0);
+   //gl_Position = projection * view * model *vec4(posES, 1.0);
+
+   gl_Position = projection * view *vec4(posES, 1.0); // <- putback
+
+   float right = (textureOffset(heightMap, TexES, ivec2(1,0)).r)*scale;
+   float left = (textureOffset(heightMap, TexES, ivec2(-1,0)).r)*scale;
+   float up = (textureOffset(heightMap, TexES, ivec2(0,1)).r)*scale;
+   float down = (textureOffset(heightMap, TexES, ivec2(0,-1)).r)*scale;
+
+   float lr = left - right ;
+   float du = up - down ;
+   normES = normalize(vec3(lr,2.0,du)) ;
+
+
+
+    //procedure normals
+
+   //vec3 right = vec3(posES.x-l, posES.y, posES.z) ;
+   //vec3 left = vec3(posES.x-r, posES.y, posES.z) ;
+   //vec3 up = vec3(posES.x, posES.y, posES.z-d) ;
+   //vec3 down = vec3(posES.x, posES.y, posES.z-u) ;
+   
+   //float r = noise(right,octaves);
+   //float l = noise(left,octaves);
+   //float u = noise(up,octaves);
+   //float d = noise(down,octaves);
+   ////normES = normalize(vec3(-(l-r), -2, -(d-u))) ;
+   
+   //float lr = l - r ;
+   //float du = u - d ;
+   //normES = normalize(vec3(lr,2.0,du)) ;
+   
+   //posES.y = noise(posES, octaves) ;
+   //gl_Position = projection * view *vec4(posES, 1.0);
+
+ 
+} 
+
+
+//basic linear interpolation
+vec2 interpolate2D(vec2 v0, vec2 v1, vec2 v2)
+{
+   	return vec2(gl_TessCoord.x) * v0 + vec2(gl_TessCoord.y) * v1 + vec2(gl_TessCoord.z) * v2;
+}
+
+//vec2 interpolate2D(vec2 v0, vec2 v1)
+//{
+   	//return vec2(gl_TessCoord.x) * v0 + vec2(gl_TessCoord.y) * v1;
+//}
+
+vec3 interpolate3D(vec3 v0, vec3 v1, vec3 v2)
+{
+   	return vec3(gl_TessCoord.x) * v0 + vec3(gl_TessCoord.y) * v1 + vec3(gl_TessCoord.z) * v2;
+}
+
+
+
+float hash(float n) {
+	return fract(sin(n) * 753.5453123);
+}
+
+float snoise(vec3 x)
+{
+	vec3 p = floor(x);
+	vec3 f = fract(x);
+	f = f * f * (3.0f - (2.0f * f));
+
+	float n = p.x + p.y * 157.0f + 113.0f * p.z;
+	return mix(mix(mix(hash(n + 0.0f), hash(n + 1.0f), f.x),
+		mix(hash(n + 157.0f), hash(n + 158.0f), f.x), f.y),
+		mix(mix(hash(n + 113.0f), hash(n + 114.0f), f.x),
+			mix(hash(n + 270.0f), hash(n + 271.0f), f.x), f.y), f.z);
+}
+
+float noise(vec3 position, int octaves) {
+	float total = 0.0f;
+	float frequency = 0.005;
+	float maxAmplitude = 0.0f;
+	float amplitude = 50.0f;
+	for (int i = 0; i < octaves; i++) {
+		total += snoise(position * frequency) * amplitude;
+		frequency *= 2.0f;
+		amplitude /= 2.0f;
+		maxAmplitude += amplitude;
+	}
+
+	return (total / maxAmplitude)*scale ;
+}
+
+
